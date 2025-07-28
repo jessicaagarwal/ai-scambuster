@@ -5,3 +5,9 @@ langchain-huggingface
 datasets
 chromadb
 python-dotenv
+faiss
+groq
+transformers
+torch
+pypdf
+tqdm
