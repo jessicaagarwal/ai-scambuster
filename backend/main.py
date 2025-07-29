@@ -3,30 +3,42 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from backend.pipeline import analyze_message
 
-app = FastAPI(
-    title="AI ScamBuster",
-    description="Real-time AI-powered scam detection and explanation assistant",
-    version="1.0.0"
-)
+app = FastAPI()
 
-# Enable CORS
+# CORS: Allow frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update in production
+    allow_origins=["*"],  # Adjust this for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Define input model for JSON
-class MessageInput(BaseModel):
-    message: str
+# Request schema
+class MessageRequest(BaseModel):
+    text: str
 
-# ✅ Update endpoint to accept JSON
-@app.post("/analyze")
-def analyze(input: MessageInput):
-    """
-    Analyze a message to detect scam and explain if needed.
-    """
-    result = analyze_message(input.message)
-    return result
+# Response schema
+class AnalysisResponse(BaseModel):
+    verdict: str
+    icon: str
+    label: str  # <- This must be a string, not a dict
+    confidence: float
+    source: str
+    reason: str
+
+@app.post("/analyze", response_model=AnalysisResponse)
+async def analyze(request: MessageRequest):
+    raw_result = analyze_message(request.text)
+
+    # Ensure formatting
+    response = {
+        "verdict": raw_result.get("verdict", "Unknown"),
+        "icon": raw_result.get("icon", "❓"),
+        "label": str(raw_result.get("label", "unknown")),  # force to string
+        "confidence": float(raw_result.get("confidence", 0.0)),
+        "source": raw_result.get("source", "classifier"),
+        "reason": raw_result.get("reason", "No reason provided"),
+    }
+
+    return response

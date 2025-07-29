@@ -15,21 +15,15 @@ def tag_text(text: str) -> list:
 
     return tags or ["general_scam"]
 
-def heuristic_override(message: str, model_output: dict):
-    spam_keywords = [
-        "you have been selected",
-        "winner of a",
-        "claim your reward",
-        "gift card",
-        "click the link",
-        "free iphone",
-        "lottery",
-        "congratulations!",
-        "click here",
-        "urgent action",
-        "limited time offer"
-    ]
-    message_lower = message.lower()
-    if any(keyword in message_lower for keyword in spam_keywords):
-        return {"label": "spam", "confidence": 0.99}
-    return model_output
+SCAM_KEYWORDS = [
+    "lottery", "click here", "claim your prize", "free", "urgent",
+    "win", "reward", "gift", "congratulations", "credit card", "money",
+    "verify", "limited time", "offer", "act now", "guaranteed"
+]
+
+def heuristic_override(text: str) -> tuple[str, str]:
+    lower_text = text.lower()
+    for keyword in SCAM_KEYWORDS:
+        if keyword in lower_text:
+            return "spam", f"Keyword match: '{keyword}'"
+    return "ham", ""

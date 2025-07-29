@@ -1,30 +1,64 @@
-from huggingface_hub import InferenceClient
 import os
+import requests
+from backend.ingest.utils import heuristic_override
 from dotenv import load_dotenv
 
 load_dotenv()
 
-HF_API_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
-client = InferenceClient(
-    model="mrm8488/bert-tiny-finetuned-sms-spam-detection",
-    token=HF_API_TOKEN
-)
+MODEL_URL = "https://api-inference.huggingface.co/models/mrm8488/bert-tiny-finetuned-sms-spam-detection"
+HEADERS = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
 
-def classify_message(text: str) -> dict:
-    """
-    Classify message using HuggingFace Inference API and return label + confidence
-    """
+def remote_classify(text: str) -> dict:
     try:
-        response = client.text_classification(text)
-        pred = response[0]
+        response = requests.post(
+            MODEL_URL,
+            headers=HEADERS,
+            json={"inputs": text},
+            timeout=8,
+        )
+        result = response.json()
+        print("[DEBUG] HuggingFace API raw response:", result)
+
+        # Check if we got nested lists
+        if isinstance(result, list) and len(result) > 0 and isinstance(result[0], list):
+            predictions = result[0]  # grab the inner list
+        else:
+            predictions = result
+
+        # Find the label with the highest score
+        if isinstance(predictions, list) and predictions:
+            top = max(predictions, key=lambda x: x["score"])
+            label = "spam" if top["label"] == "LABEL_1" else "ham"
+            confidence = top["score"]
+        else:
+            label = "unknown"
+            confidence = 0.0
+
+        # Run heuristic override
+        heuristic_label, reason = heuristic_override(text)
+        if heuristic_label == "spam" and label != "spam":
+            print(f"[OVERRIDE] Heuristic forced 'spam' due to: {reason}")
+            return {
+                "label": "spam",
+                "confidence": 0.75,
+                "source": "heuristic + hf",
+                "reason": reason,
+            }
+
         return {
-            "label": "spam" if pred["label"].lower() == "spam" else "not spam",
-            "confidence": round(pred["score"], 3)
+            "label": label,
+            "confidence": confidence,
+            "source": "huggingface",
+            "reason": "No scam indicators found." if label == "ham" else "High spam score from model",
         }
+
     except Exception as e:
+        print(f"[ERROR] HF API call failed: {e}")
         return {
             "label": "unknown",
             "confidence": 0.0,
-            "error": str(e)
+            "source": "heuristic (API error)",
+            "reason": "Failed to connect to model",
         }

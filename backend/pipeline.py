@@ -1,33 +1,35 @@
-from backend.model.classifier import classify_message
-from backend.ingest.utils import heuristic_override
+from backend.model.classifier import remote_classify
 from backend.rag_chat import explain_scam
 
 def analyze_message(message: str) -> dict:
-    """
-    Run classification and explanation pipeline on the input message.
+    # Step 1: Call HuggingFace classifier
+    classification = remote_classify(message)
 
-    Returns:
-        {
-            "prediction": {
-                "label": "spam" or "not spam",
-                "confidence": float
-            },
-            "explanation": str
-        }
-    """
-    # 1. Classify using HuggingFace spam detection
-    prediction = classify_message(message)
+    # Step 2: Parse response
+    label = classification.get("label", "unknown")
+    confidence = classification.get("confidence", 0.0)
+    source = classification.get("source", "unknown")
 
-    if prediction.get("error"):
-        return {"error": prediction["error"]}
-
-    # 2. Generate intelligent explanation if it's spam
-    if prediction["label"] == "spam":
-        explanation = explain_scam(message)
+    # Step 3: Use fallback if model failed badly
+    if label == "unknown":
+        verdict = "Safe Message"
+        icon = "✅"
+        reason = "Unable to classify message. Fallback assumed safe."
+    elif label == "spam":
+        verdict = "Scam Detected"
+        icon = "🛡️"
+        reason = explain_scam(message)
     else:
-        explanation = "✅ This message appears safe. Still, stay cautious with unknown links or requests."
+        verdict = "Safe Message"
+        icon = "✅"
+        reason = "No scam indicators found."
 
+    # Step 4: Return structured result
     return {
-        "prediction": prediction,
-        "explanation": explanation
+        "verdict": verdict,
+        "icon": icon,
+        "label": label,
+        "confidence": round(confidence, 2),
+        "source": source,
+        "reason": reason,
     }
