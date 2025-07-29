@@ -14,3 +14,22 @@ def tag_text(text: str) -> list:
         tags.append("phishing")
 
     return tags or ["general_scam"]
+
+def heuristic_override(message: str, model_output: dict):
+    spam_keywords = [
+        "you have been selected",
+        "winner of a",
+        "claim your reward",
+        "gift card",
+        "click the link",
+        "free iphone",
+        "lottery",
+        "congratulations!",
+        "click here",
+        "urgent action",
+        "limited time offer"
+    ]
+    message_lower = message.lower()
+    if any(keyword in message_lower for keyword in spam_keywords):
+        return {"label": "spam", "confidence": 0.99}
+    return model_output

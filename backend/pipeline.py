@@ -1,4 +1,5 @@
 from backend.model.classifier import classify_message
+from backend.ingest.utils import heuristic_override
 from backend.rag_chat import explain_scam
 
 def analyze_message(message: str) -> dict:
