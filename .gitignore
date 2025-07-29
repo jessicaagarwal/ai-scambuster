@@ -34,3 +34,4 @@ data/*.pdf~
 *.pkl
 
 vectorstore/spam_*.pkl
+.env
