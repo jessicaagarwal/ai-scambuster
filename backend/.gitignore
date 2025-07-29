@@ -32,3 +32,5 @@ data/*.pdf~
 
 # Output artifacts
 *.pkl
+
+vectorstore/spam_*.pkl

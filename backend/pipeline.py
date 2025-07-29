@@ -1,37 +1,32 @@
-from ingest.huggingface_loader import load_sms_spam_dataset
-from ingest.utils import tag_text
-from model.embedder import get_embedder
-from vectorstore.index import get_vectorstore
-from langchain_huggingface import HuggingFaceEndpointEmbeddings
-from dotenv import load_dotenv
-import os
-import pickle
+from backend.model.classifier import classify_message
+from backend.rag_chat import explain_scam
 
-# Load environment variables
-load_dotenv()
-HF_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+def analyze_message(message: str) -> dict:
+    """
+    Run classification and explanation pipeline on the input message.
 
-# Initialize embedding model
-embedding = HuggingFaceEndpointEmbeddings(
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    huggingfacehub_api_token=HF_TOKEN
-)
+    Returns:
+        {
+            "prediction": {
+                "label": "spam" or "not spam",
+                "confidence": float
+            },
+            "explanation": str
+        }
+    """
+    # 1. Classify using HuggingFace spam detection
+    prediction = classify_message(message)
 
-def run_pipeline():
-    # Load and prepare data
-    data = load_sms_spam_dataset()
-    texts = [entry["text"] for entry in data]
-    metadatas = [entry["metadata"] for entry in data]
+    if prediction.get("error"):
+        return {"error": prediction["error"]}
 
-    print(f"[DEBUG] Loaded {len(texts)} texts and {len(metadatas)} metadatas.")
+    # 2. Generate intelligent explanation if it's spam
+    if prediction["label"] == "spam":
+        explanation = explain_scam(message)
+    else:
+        explanation = "✅ This message appears safe. Still, stay cautious with unknown links or requests."
 
-    # Build and save vectorstore
-    vs = get_vectorstore(texts=texts, metadatas=metadatas, embedding_function=embedding)
-    os.makedirs("vectorstore", exist_ok=True)
-    with open("backend/vectorstore/spam_faiss.pkl", "wb") as f:
-        pickle.dump(vs, f)
-    
-    print(f"✅ {len(texts)} spam messages embedded and vectorstore saved.")
-
-if __name__ == "__main__":
-    run_pipeline()
+    return {
+        "prediction": prediction,
+        "explanation": explanation
+    }

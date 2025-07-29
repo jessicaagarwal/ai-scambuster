@@ -1,70 +1,57 @@
-from langchain.vectorstores import FAISS
-from langchain.embeddings import HuggingFaceInferenceAPIEmbeddings
-from langchain_core.documents import Document
-from dotenv import load_dotenv
 import os
-import pickle
-from groq import Groq
+from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain.prompts import PromptTemplate
+from langchain_core.documents import Document
+from langchain_groq import ChatGroq
+from dotenv import load_dotenv
 
 load_dotenv()
 
-HF_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+# Load environment variables
+hf_token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+groq_api_key = os.getenv("GROQ_API_KEY")
 
-# ✅ Use the tested working embedder
 embedding = HuggingFaceInferenceAPIEmbeddings(
-    api_key=HF_TOKEN,
+    api_key=hf_token,
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
-# ✅ Load FAISS vectorstore
-with open("backend/vectorstore/spam_faiss.pkl", "rb") as f:
-    faiss_store = pickle.load(f)
+# Load FAISS index
+vectorstore = FAISS.load_local("backend/vectorstore/faiss_index", embedding, allow_dangerous_deserialization=True)
+retriever = vectorstore.as_retriever()
 
-print("✅ Vectorstore loaded. Type your message (e.g., suspicious SMS):\n")
+# Prompt template for explanation
+template = """
+You are an AI cybersecurity expert trained on global scam and fraud data. Your job is to explain why a given message might be a scam, based on the context below.
 
-# Initialize Groq client for LLaMA3
-groq_client = Groq(api_key=GROQ_API_KEY)
+Context:
+{context}
 
-while True:
-    query = input("🔍 Your message: ").strip()
-    if not query:
-        continue
+Question: Why is the following message suspicious?
+Message: "{message}"
 
-    try:
-        docs_and_scores = faiss_store.similarity_search_with_score(query, k=3)
-    except Exception as e:
-        print(f"[ERROR] Similarity search failed: {e}")
-        continue
-
-    context_texts = "\n---\n".join(
-        [f"[Similarity Score: {round(score, 4)}]\n{doc.page_content}" for doc, score in docs_and_scores]
-    )
-
-    prompt = f"""
-You are an SMS spam classification assistant.
-
-Based on the following retrieved messages from a spam corpus, determine if the user query is spam or not. Be direct.
-
-Retrieved Examples:
-{context_texts}
-
-User Message:
-\"{query}\"
-
-Answer in this format:
-Spam Probability: (High | Medium | Low)
-Reasoning: <short explanation>
-Final Verdict: (Spam | Not Spam)
+Provide a clear, concise explanation in under 100 words.
 """
 
-    try:
-        chat_response = groq_client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-        )
-        reply = chat_response.choices[0].message.content
-        print("\n🤖 LLaMA3 Response:\n", reply)
-    except Exception as e:
-        print(f"[ERROR] LLM call failed: {e}")
+prompt = PromptTemplate(
+    input_variables=["context", "message"],
+    template=template
+)
+
+llm = ChatGroq(
+    model_name="llama3-70b-8192",
+    api_key=groq_api_key
+)
+
+def explain_scam(message: str) -> str:
+    """
+    Generate scam explanation using RAG over vector DB.
+    """
+    docs: list[Document] = retriever.get_relevant_documents(message)
+    context = "\n".join([doc.page_content for doc in docs[:3]])  # Top 3 relevant chunks
+
+    prompt_text = prompt.format(context=context, message=message)
+    response = llm.invoke(prompt_text)
+
+    return response.content
