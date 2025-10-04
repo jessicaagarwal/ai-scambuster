@@ -4,7 +4,7 @@ langchain-chroma
 langchain-huggingface
 datasets
 python-dotenv
-faiss
+faiss-cpu
 groq
 transformers
 torch
@@ -13,3 +13,4 @@ tqdm
 fastapi
 uvicorn
 python-multipart
+requests

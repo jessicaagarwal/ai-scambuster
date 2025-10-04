@@ -97,9 +97,28 @@ prompt = PromptTemplate(
     template=template
 )
 
+def _fallback_explanation(message: str) -> str:
+    """Provide a concise, user-friendly heuristic explanation when RAG fails."""
+    text = (message or "").lower()
+    indicators = []
+    if any(k in text for k in ["bank", "account", "verify", "otp", "password"]):
+        indicators.append("requests sensitive banking or login details")
+    if any(k in text for k in ["click", "link", "http://", "https://", "login", "verify-account"]):
+        indicators.append("contains a link urging immediate action")
+    if any(k in text for k in ["urgent", "24 hours", "immediately", "suspend", "closure"]):
+        indicators.append("uses urgency or threats to pressure you")
+    if any(k in text for k in ["win", "prize", "reward", "free", "jackpot"]):
+        indicators.append("promises rewards to lure a response")
+    if not indicators:
+        indicators.append("matches common scam patterns (urgency, links, or requests for credentials)")
+    return (
+        "Potential scam indicators: " + "; ".join(indicators) + ". "
+        "Never enter credentials from unsolicited messages; verify via official channels."
+    )
+
 # Explanation function
 def explain_scam(text: str) -> str:
-    """Analyze text for potential scam indicators using RAG."""
+    """Analyze text for potential scam indicators using RAG with graceful fallback."""
     try:
         logger.debug(f"Processing text: {text}")
         
@@ -110,25 +129,26 @@ def explain_scam(text: str) -> str:
         try:
             docs = retriever.invoke(text)
             if not docs:
-                raise ValueError("No relevant context found")
+                logger.warning("No relevant context found; using fallback explanation")
+                return _fallback_explanation(text)
             context = "\n\n".join([doc.page_content for doc in docs])
             logger.debug(f"Retrieved {len(docs)} relevant documents")
         except Exception as e:
-            logger.error(f"Retriever error: {str(e)}")
-            return "Error: Unable to retrieve context"
+            logger.error(f"Retriever error: {str(e)}; using fallback explanation")
+            return _fallback_explanation(text)
 
         # Generate explanation
         try:
             response = llm.invoke(prompt.format(context=context, message=text))
             return response.content if hasattr(response, "content") else str(response)
         except Exception as e:
-            logger.error(f"LLM error: {str(e)}")
-            return "Error: Unable to generate explanation"
+            logger.error(f"LLM error: {str(e)}; using fallback explanation")
+            return _fallback_explanation(text)
 
     except ValueError as ve:
         logger.error(f"Validation error: {str(ve)}")
-        return f"Error: {str(ve)}"
-    except Exception as e:
+        return _fallback_explanation(text)
+    except Exception:
         logger.error("Unexpected error:")
         logger.error(traceback.format_exc())
-        return "Unable to analyze due to backend error"
+        return _fallback_explanation(text)

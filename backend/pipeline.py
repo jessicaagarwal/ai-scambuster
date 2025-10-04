@@ -7,22 +7,26 @@ def analyze_message(message: str) -> dict:
 
     # Step 2: Parse response
     label = classification.get("label", "unknown")
-    confidence = classification.get("confidence", 0.0)
-    source = classification.get("source", "unknown")
+    confidence = float(classification.get("confidence", 0.0))
 
-    # Step 3: Use fallback if model failed badly
-    if label == "unknown":
-        verdict = "Safe Message"
-        icon = "✅"
-        reason = "Unable to classify message. Fallback assumed safe."
-    elif label == "spam":
-        verdict = "Scam Detected"
-        icon = "🛡️"
+    # Step 3: Map to unified verdicts and sources
+    if label == "spam":
+        verdict = "SCAM"
+        icon = "🚨"
+        # When we generate an explanation via RAG, mark source as knowledge-base
+        source = "knowledge-base"
         reason = explain_scam(message)
-    else:
-        verdict = "Safe Message"
+    elif label == "ham":
+        verdict = "SAFE"
         icon = "✅"
+        source = "classifier"
         reason = "No scam indicators found."
+    else:
+        # Unknown -> treat as suspicious
+        verdict = "SUSPICIOUS"
+        icon = "⚠️"
+        source = "classifier"
+        reason = "Unable to confidently classify the message."
 
     # Step 4: Return structured result
     return {
